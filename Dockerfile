@@ -112,13 +112,8 @@ RUN echo 'export PATH="/home/appuser/.local/bin:$PATH"' >> /home/appuser/.bashrc
     echo 'cd /app' >> /home/appuser/.bashrc && \
     echo 'source /app/.venv/bin/activate' >> /home/appuser/.bashrc
 
-
-
 # Default command
 CMD ["/bin/bash"]
-
-
-
 
 # ============================================================================
 # TESTING SETUP
@@ -134,5 +129,4 @@ RUN chmod +x /app/e2e-test.sh
 
 # Test command that can be run after container starts
 # Usage: docker exec -it <container> /app/e2e-test.sh
-
 
