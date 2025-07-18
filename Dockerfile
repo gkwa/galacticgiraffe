@@ -37,7 +37,22 @@ RUN apt-get update && \
 WORKDIR /app
 
 # Create a non-root user (optional but recommended for security)
-RUN useradd -m -s /bin/bash appuser && chown -R appuser:appuser /app
+RUN useradd -m -s /bin/bash appuser
+
+# ============================================================================
+# TESTING SETUP (BEFORE USER SWITCH)
+# ============================================================================
+
+# Create test files for Airflow DAG testing
+RUN mkdir -p /app/dags /app/tests
+
+# Copy test files and set permissions (as root)
+COPY dags/hello_world_dag.py /app/dags/
+COPY e2e-test.sh /app/
+RUN chmod +x /app/e2e-test.sh
+
+# Change ownership of entire /app directory to appuser
+RUN chown -R appuser:appuser /app
 
 # Switch to non-root user
 USER appuser
@@ -115,18 +130,5 @@ RUN echo 'export PATH="/home/appuser/.local/bin:$PATH"' >> /home/appuser/.bashrc
 # Default command
 CMD ["/bin/bash"]
 
-# ============================================================================
-# TESTING SETUP
-# ============================================================================
-
-# Create test files for Airflow DAG testing
-RUN mkdir -p /app/dags /app/tests
-
-# Copy test files (these will be created via the artifact system)
-COPY dags/hello_world_dag.py /app/dags/
-COPY e2e-test.sh /app/
-RUN chmod +x /app/e2e-test.sh
-
 # Test command that can be run after container starts
 # Usage: docker exec -it <container> /app/e2e-test.sh
-
