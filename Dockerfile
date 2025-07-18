@@ -23,19 +23,6 @@ RUN apt-get update && \
     && rm -rf /var/lib/apt/lists/*
 
 # ============================================================================
-# UV (PYTHON PACKAGE MANAGER) INSTALLATION
-# ============================================================================
-
-# Install UV (Python package manager) - using default installation directory
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
-    echo 'source $HOME/.local/bin/env' >> /etc/bash.bashrc
-
-# Set up UV environment and verify installation
-RUN bash -c 'source $HOME/.local/bin/env && \
-    SHELL=/bin/bash uv tool update-shell && \
-    uv --version'
-
-# ============================================================================
 # WORKSPACE SETUP
 # ============================================================================
 
@@ -48,6 +35,19 @@ RUN useradd -m -s /bin/bash appuser && \
 
 # Switch to non-root user
 USER appuser
+
+# ============================================================================
+# UV (PYTHON PACKAGE MANAGER) INSTALLATION
+# ============================================================================
+
+# Install UV (Python package manager) - using default installation directory
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
+    echo 'source $HOME/.local/bin/env' >> ~/.bashrc
+
+# Set up UV environment and verify installation
+RUN bash -c 'source $HOME/.local/bin/env && \
+    SHELL=/bin/bash uv tool update-shell && \
+    uv --version'
 
 # ============================================================================
 # UV TOOLS INSTALLATION
