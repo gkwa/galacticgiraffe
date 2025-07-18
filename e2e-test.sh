@@ -14,7 +14,7 @@ echo "✅ DAG copied"
 if ! pgrep -f "airflow scheduler" >/dev/null; then
    nohup airflow scheduler >scheduler.log 2>&1 &
    echo "✅ Scheduler started"
-   sleep 30
+   wait4x http http://127.0.0.1:8793
 else
    echo "✅ Scheduler already running"
 fi
