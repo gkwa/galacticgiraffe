@@ -2,7 +2,6 @@
 # BASE IMAGE SETUP
 # ============================================================================
 
-# Use Ubuntu Noble (24.04) as the base image
 FROM ubuntu:noble
 
 # Set environment variables to avoid interactive prompts during package installation
@@ -13,22 +12,33 @@ ENV PATH="/home/appuser/.local/bin:$PATH"
 ENV HOME=/home/appuser
 ENV PYTHON_VERSION=3.12
 
-# Set default shell to bash for RUN commands
-SHELL ["/bin/bash", "-c"]
+# Set default shell to bash for RUN commands with pipefail
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 # ============================================================================
 # SYSTEM PACKAGES INSTALLATION
 # ============================================================================
 
-# Update package lists and install required packages
-RUN apt-get update && \
-   apt-get install -y \
-       curl \
-       jq \
-       git \
-       ca-certificates \
-   && apt-get clean \
-   && rm -rf /var/lib/apt/lists/*
+# Update package lists and install required packages with updated pinned versions
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        curl=8.5.0-2ubuntu10.6 \
+        jq=1.7.1-3build1 \
+        git=1:2.43.0-1ubuntu7.3 \
+        ca-certificates=20240203 \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# ============================================================================
+# TIMEZONE CONFIGURATION
+# ============================================================================
+
+# Set timezone environment variables
+ENV TZ=UTC
+ENV AIRFLOW__CORE__DEFAULT_TIMEZONE=UTC
+
+# Link timezone data
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ >/etc/timezone
 
 # ============================================================================
 # WORKSPACE SETUP
@@ -37,18 +47,10 @@ RUN apt-get update && \
 # Set working directory
 WORKDIR /app
 
-# Create a non-root user (optional but recommended for security)
-RUN useradd -m -s /bin/bash appuser
-
-# ============================================================================
-# TESTING SETUP (BEFORE USER SWITCH) - CREATE DIRECTORIES ONLY
-# ============================================================================
-
-# Create test directories for Airflow DAG testing (but don't copy files yet)
-RUN mkdir -p /app/dags /app/tests
-
-# Change ownership of entire /app directory to appuser
-RUN chown -R appuser:appuser /app
+# Create a non-root user and setup directories in one step
+RUN useradd -m -s /bin/bash appuser \
+    && mkdir -p /app/dags /app/tests \
+    && chown -R appuser:appuser /app
 
 # Switch to non-root user
 USER appuser
@@ -57,83 +59,72 @@ USER appuser
 # UV (PYTHON PACKAGE MANAGER) INSTALLATION
 # ============================================================================
 
-# Install UV (Python package manager) - using default installation directory
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Set up UV environment and verify installation
-RUN SHELL=/bin/bash uv tool update-shell && \
-   uv --version
+# Install UV (Python package manager) and verify installation
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh \
+    && SHELL=/bin/bash uv tool update-shell \
+    && uv --version
 
 # ============================================================================
 # UV TOOLS INSTALLATION
 # ============================================================================
 
-# Install go-task tool from GitHub
-RUN uv tool install go-task-bin
-
-# Install wait4x
-RUN rm -rf /tmp/wait4x && \
-   curl -LO https://github.com/wait4x/wait4x/releases/latest/download/wait4x-linux-amd64.tar.gz && \
-   tar -xf wait4x-linux-amd64.tar.gz -C /tmp && \
-   mkdir -p $HOME/.local/bin && \
-   mv /tmp/wait4x $HOME/.local/bin/ && \
-   export PATH="$HOME/.local/bin:$PATH" && \
-   wait4x version && \
-   rm -f wait4x-linux-amd64.tar.gz
-
-RUN mkdir -p $HOME/.local/share/
-
-RUN git clone https://github.com/gkwa/ringgem $HOME/.local/share/ringgem
+# Install go-task tool and wait4x in consolidated steps
+RUN uv tool install go-task-bin \
+    && rm -rf /tmp/wait4x \
+    && curl -LO https://github.com/wait4x/wait4x/releases/latest/download/wait4x-linux-amd64.tar.gz \
+    && tar -xf wait4x-linux-amd64.tar.gz -C /tmp \
+    && mkdir -p "$HOME"/.local/bin \
+    && mv /tmp/wait4x "$HOME"/.local/bin/ \
+    && export PATH="$HOME/.local/bin:$PATH" \
+    && wait4x version \
+    && rm -f wait4x-linux-amd64.tar.gz \
+    && mkdir -p "$HOME"/.local/share/
 
 # ============================================================================
 # APACHE AIRFLOW SETUP
 # ============================================================================
 
-# Set up environment variables and get Airflow version
-RUN AIRFLOW_VERSION="$(uv tool run --python=${PYTHON_VERSION} --from=apache-airflow -- python -c "import airflow; print(airflow.__version__)")" && \
-   echo AIRFLOW_VERSION=$AIRFLOW_VERSION
+# Set up environment variables, create venv, and install Airflow
+# hadolint ignore=SC1091
+RUN AIRFLOW_VERSION="$(uv tool run --python="${PYTHON_VERSION}" --from=apache-airflow -- python -c "import airflow; print(airflow.__version__)")" \
+    && echo "AIRFLOW_VERSION=$AIRFLOW_VERSION" \
+    && uv venv --python="${PYTHON_VERSION}" \
+    && . /app/.venv/bin/activate \
+    && CONSTRAINT_URL="https://raw.githubusercontent.com/apache/airflow/constraints-${AIRFLOW_VERSION}/constraints-${PYTHON_VERSION}.txt" \
+    && uv pip install "apache-airflow[cncf.kubernetes,celery]==${AIRFLOW_VERSION}" tzdata graphviz pandas --constraint "${CONSTRAINT_URL}"
 
-# Create new virtual environment
-RUN uv venv --python=${PYTHON_VERSION}
-
-# Install Apache Airflow with dependencies
-RUN AIRFLOW_VERSION="$(uv tool run --python=${PYTHON_VERSION} --from apache-airflow -- python -c "import airflow; print(airflow.__version__)")" && \
-   source /app/.venv/bin/activate && \
-   CONSTRAINT_URL="https://raw.githubusercontent.com/apache/airflow/constraints-${AIRFLOW_VERSION}/constraints-${PYTHON_VERSION}.txt" && \
-   uv pip install "apache-airflow[cncf.kubernetes,celery]==${AIRFLOW_VERSION}" graphviz pandas --constraint "${CONSTRAINT_URL}"
-
-# Create Airflow configuration file
-RUN echo "[core]" > airflow.cfg && \
-   echo "auth_manager = airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager" >> airflow.cfg && \
-   echo "executor = LocalExecutor" >> airflow.cfg && \
-   echo "parallelism = 16" >> airflow.cfg && \
-   echo "max_active_runs_per_dag = 16" >> airflow.cfg
+# Create Airflow configuration file using heredoc
+RUN cat <<EOF > airflow.cfg
+[core]
+auth_manager = airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
+executor = LocalExecutor
+parallelism = 16
+max_active_runs_per_dag = 16
+default_timezone = UTC
+EOF
 
 ARG CACHE_BUST=1
 
-   # Initialize Airflow database and verify installation
-RUN source .venv/bin/activate && \
-   airflow version && \
-   airflow config get-value core auth_manager && \
-   airflow db migrate && \
-   airflow providers list
-
-# Ensure bash is available and create basic bash configuration
-RUN echo export PATH=$HOME/.local/bin:'$PATH' >>$HOME/.bashrc && \
-   echo cd /app >>/home/appuser/.bashrc && \
-   echo source /app/.venv/bin/activate >>/home/appuser/.bashrc
+# Initialize Airflow database and setup bash configuration
+# hadolint ignore=SC1091
+RUN . .venv/bin/activate \
+    && airflow version \
+    && airflow config get-value core auth_manager \
+    && airflow db migrate \
+    && airflow providers list \
+    && echo "export PATH=\"\$HOME/.local/bin:\$PATH\"" >>"$HOME"/.bashrc \
+    && echo "cd /app" >>"$HOME"/.bashrc \
+    && echo ". /app/.venv/bin/activate" >>"$HOME"/.bashrc
 
 # ============================================================================
-# COPY TEST FILES LAST (FOR FAST ITERATION)
+# COPY PROJECT FILES
 # ============================================================================
 
-# Copy test files and set permissions (files are copied as appuser since we're already switched)
-COPY --chown=appuser:appuser dags/hello_world_dag.py /app/dags/
-COPY --chown=appuser:appuser e2e-test.sh /app/
+# Copy the entire project directory structure
+COPY --chown=appuser:appuser . /app/
+
+# Ensure e2e-test.sh is executable
 RUN chmod +x /app/e2e-test.sh
 
 # Default command
 CMD ["/bin/bash"]
-
-# Test command that can be run after container starts
-# Usage: docker exec -it <container> /app/e2e-test.sh
