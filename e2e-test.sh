@@ -10,11 +10,30 @@ mkdir -p "$DAGS_FOLDER"
 cp dags/hello_world_dag.py "$DAGS_FOLDER/"
 echo "✅ DAG copied"
 
+# Start both webserver and scheduler
+echo "🚀 Starting Airflow services..."
+
+# Start webserver first
+if ! pgrep -f "airflow api-server" >/dev/null; then
+    nohup airflow api-server --port=8080 >webserver.log 2>&1 &
+    echo "✅ Webserver starting..."
+fi
+
+# Start scheduler
+if ! pgrep -f "airflow scheduler" >/dev/null; then
+    nohup airflow scheduler >scheduler.log 2>&1 &
+    echo "✅ Scheduler starting..."
+fi
+
+# Wait for both services to be ready
+wait4x http http://127.0.0.1:8080 --backoff-policy=linear --timeout=1m --interval=5s --quiet
+echo "✅ Services ready"
+
 # 2. Start scheduler if needed
 if ! pgrep -f "airflow scheduler" >/dev/null; then
    nohup airflow scheduler >scheduler.log 2>&1 &
    echo "✅ Scheduler started"
-   wait4x http http://127.0.0.1:8793
+   wait4x http http://127.0.0.1:8793 --backoff-policy=linear --timeout=1m --interval=5s --quiet
 else
    echo "✅ Scheduler already running"
 fi

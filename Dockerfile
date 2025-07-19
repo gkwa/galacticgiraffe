@@ -41,16 +41,11 @@ WORKDIR /app
 RUN useradd -m -s /bin/bash appuser
 
 # ============================================================================
-# TESTING SETUP (BEFORE USER SWITCH)
+# TESTING SETUP (BEFORE USER SWITCH) - CREATE DIRECTORIES ONLY
 # ============================================================================
 
-# Create test files for Airflow DAG testing
+# Create test directories for Airflow DAG testing (but don't copy files yet)
 RUN mkdir -p /app/dags /app/tests
-
-# Copy test files and set permissions (as root)
-COPY dags/hello_world_dag.py /app/dags/
-COPY e2e-test.sh /app/
-RUN chmod +x /app/e2e-test.sh
 
 # Change ownership of entire /app directory to appuser
 RUN chown -R appuser:appuser /app
@@ -124,13 +119,21 @@ RUN source .venv/bin/activate && \
    airflow providers list
 
 # Ensure bash is available and create basic bash configuration
-RUN echo 'export PATH="/home/appuser/.local/bin:$PATH"' >> /home/appuser/.bashrc && \
-   echo 'cd /app' >> /home/appuser/.bashrc && \
-   echo 'source /app/.venv/bin/activate' >> /home/appuser/.bashrc
+RUN echo export PATH=$HOME/.local/bin:'$PATH' >>$HOME/.bashrc && \
+   echo cd /app >>/home/appuser/.bashrc && \
+   echo source /app/.venv/bin/activate >>/home/appuser/.bashrc
+
+# ============================================================================
+# COPY TEST FILES LAST (FOR FAST ITERATION)
+# ============================================================================
+
+# Copy test files and set permissions (files are copied as appuser since we're already switched)
+COPY --chown=appuser:appuser dags/hello_world_dag.py /app/dags/
+COPY --chown=appuser:appuser e2e-test.sh /app/
+RUN chmod +x /app/e2e-test.sh
 
 # Default command
 CMD ["/bin/bash"]
 
 # Test command that can be run after container starts
 # Usage: docker exec -it <container> /app/e2e-test.sh
-
