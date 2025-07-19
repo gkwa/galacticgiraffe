@@ -68,7 +68,7 @@ RUN SHELL=/bin/bash uv tool update-shell && \
 # UV TOOLS INSTALLATION
 # ============================================================================
 
-# Install quicklizard tool from GitHub
+# Install go-task tool from GitHub
 RUN uv tool install go-task-bin
 
 # Install wait4x
@@ -90,7 +90,7 @@ RUN git clone https://github.com/gkwa/ringgem $HOME/.local/share/ringgem
 # ============================================================================
 
 # Set up environment variables and get Airflow version
-RUN AIRFLOW_VERSION="$(uv tool run --python=${PYTHON_VERSION} --from apache-airflow -- python -c "import airflow; print(airflow.__version__)")" && \
+RUN AIRFLOW_VERSION="$(uv tool run --python=${PYTHON_VERSION} --from=apache-airflow -- python -c "import airflow; print(airflow.__version__)")" && \
    echo AIRFLOW_VERSION=$AIRFLOW_VERSION
 
 # Create new virtual environment
