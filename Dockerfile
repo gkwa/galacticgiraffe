@@ -4,14 +4,10 @@
 
 FROM ubuntu:noble
 
-ENV PYTHON_VERSION=3.12
-
-# Set environment variables to avoid interactive prompts during package installation
-ENV DEBIAN_FRONTEND=noninteractive
-
-# Add .local/bin to PATH for subsequent commands
-ENV PATH="/home/appuser/.local/bin:$PATH"
-ENV HOME=/home/appuser
+ENV PYTHON_VERSION=3.12 \
+    DEBIAN_FRONTEND=noninteractive \
+    PATH="/home/appuser/.local/bin:$PATH" \
+    HOME=/home/appuser
 
 # Set default shell to bash for RUN commands with pipefail
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
